@@ -107,12 +107,12 @@ if not st.session_state["jornada_iniciada"]:
     st.warning("⚠️ **Jornada no iniciada.** Por favor completa los datos en el menú lateral izquierdo y haz clic en **'Iniciar Jornada'** para comenzar.")
 
 # -----------------------------------------------------------------------------
-# FORMULARIO HORIZONTAL PARA REGISTRO DE PESO
+# FORMULARIO HORIZONTAL PARA REGISTRO DE PESO (CAPTURA AUTOMÁTICA DE HORA)
 # -----------------------------------------------------------------------------
 st.subheader("📝 Registro de Entrada de Pesos")
 
 if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloqueada"]:
-    col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1.5, 1, 1.2, 1.2, 1.2])
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         maquina_sel = st.selectbox("1. Proceso / Máquina", ["Trituradora", "Chipper"], key="maquina_select")
@@ -130,10 +130,6 @@ if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloque
     with col5:
         tara_sel = st.number_input("5. Tara Uñas (Kg)", min_value=0.0, step=1.0, value=120.0, key="tara_input")
         
-    with col6:
-        # st.time_input toma la hora local del navegador/dispositivo del usuario
-        hora_local_sel = st.time_input("6. Hora Registro", value=datetime.now().time(), key="hora_input")
-        
     btn_guardar = st.button("📥 Registrar Peso", type="primary", use_container_width=True)
     
     if btn_guardar:
@@ -143,10 +139,11 @@ if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloque
             st.error("⚠️ Por favor ingrese un peso válido registrado por la balanza.")
         else:
             peso_neto = round(peso_sel - tara_sel, 2)
-            str_hora = hora_local_sel.strftime("%H:%M:%S")
+            # Hora capturada de forma automática al momento exacto de presionar el botón
+            str_hora_auto = datetime.now().strftime("%H:%M:%S")
             
             nuevo_row = pd.DataFrame([{
-                "Hora Registro": str_hora,
+                "Hora Registro": str_hora_auto,
                 "Proceso / Máquina": maquina_sel,
                 "Tipo de Material": material_sel,
                 "Cantidad (Unidades)": cant_sel,
@@ -156,7 +153,7 @@ if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloque
             }])
             
             st.session_state["registros_pesos"] = pd.concat([st.session_state["registros_pesos"], nuevo_row], ignore_index=True)
-            st.success(f"✅ Registrado exitosamente a las {str_hora}: {cant_sel}x {material_sel} en {maquina_sel} | Peso Neto: {peso_neto} Kg")
+            st.success(f"✅ Registrado a las {str_hora_auto}: {cant_sel}x {material_sel} en {maquina_sel} | Peso Neto: {peso_neto} Kg")
             st.rerun()
 
 elif st.session_state["jornada_bloqueada"]:
@@ -174,7 +171,7 @@ info_j = st.session_state.get("datos_jornada", {})
 
 c_tri, c_chip = st.columns(2)
 
-# RESUMEN TRITURADORA (Icono: Cilindro dentado / Sierra)
+# RESUMEN TRITURADORA
 with c_tri:
     st.markdown("### 🪚 Proceso: Trituradora")
     df_tri = df_actual[df_actual["Proceso / Máquina"] == "Trituradora"]
@@ -201,7 +198,7 @@ with c_tri:
     tabla_tri["Cantidad (Unidades)"] = tabla_tri["Cantidad (Unidades)"].astype(int)
     st.dataframe(tabla_tri, use_container_width=True, hide_index=True)
 
-# RESUMEN CHIPPER (Icono: Castor)
+# RESUMEN CHIPPER
 with c_chip:
     st.markdown("### 🦫 Proceso: Chipper")
     df_chip = df_actual[df_actual["Proceso / Máquina"] == "Chipper"]
@@ -240,13 +237,10 @@ st.dataframe(df_actual, use_container_width=True)
 if not df_actual.empty or st.session_state["jornada_bloqueada"]:
     st.markdown("#### 📥 Exportar Reporte de Jornada")
     
-    # Generación de archivo Excel (.xlsx) estructurado en memoria
     buffer_excel = io.BytesIO()
     with pd.ExcelWriter(buffer_excel, engine='openpyxl') as writer:
-        # Hoja 1: Registro detallado de pesos
         df_actual.to_excel(writer, sheet_name='Registro de Pesos', index=False)
         
-        # Hoja 2: Resumen general de la jornada y horómetros
         if info_j:
             df_info_jornada = pd.DataFrame([{
                 "Fecha": info_j.get("Fecha"),
@@ -262,7 +256,6 @@ if not df_actual.empty or st.session_state["jornada_bloqueada"]:
             }])
             df_info_jornada.to_excel(writer, sheet_name='Datos Jornada y Horómetros', index=False)
             
-            # Resúmenes por máquina
             tabla_tri.to_excel(writer, sheet_name='Resumen Trituradora', index=False)
             tabla_chip.to_excel(writer, sheet_name='Resumen Chipper', index=False)
 
