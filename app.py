@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import io
 from datetime import datetime
 
 # Configuración inicial de la página
@@ -12,7 +13,7 @@ MATERIALES = {
 }
 
 # -----------------------------------------------------------------------------
-# INICIALIZACIÓN DE ESTADO (ENCERADO AUTOMÁTICO EN CADA NUEVA SESIÓN / REFRESH)
+# INICIALIZACIÓN DE ESTADO (ENCERADO EN CADA NUEVA SESIÓN / REFRESH)
 # -----------------------------------------------------------------------------
 if "jornada_iniciada" not in st.session_state:
     st.session_state["jornada_iniciada"] = False
@@ -31,7 +32,7 @@ if "registros_pesos" not in st.session_state:
 # -----------------------------------------------------------------------------
 st.sidebar.title("⚙️ Control de Jornada")
 
-# FASE 1: INICIAR JORNADA (Estado inicial encerado)
+# FASE 1: INICIAR JORNADA
 if not st.session_state["jornada_iniciada"]:
     st.sidebar.subheader("1. Apertura de Jornada")
     fecha_jornada = st.sidebar.date_input("Fecha", datetime.now())
@@ -48,8 +49,8 @@ if not st.session_state["jornada_iniciada"]:
     chip_3 = st.sidebar.text_input("Integrante 3 (Chipper)", key="chip_3")
     
     st.sidebar.markdown("**⏱️ Horómetros de Inicio:**")
-    h_init_tri = st.sidebar.number_input("Horómetro Inicio - Trituradora", min_value=0.0, step=0.1, value=0.0)
-    h_init_chip = st.sidebar.number_input("Horómetro Inicio - Chipper", min_value=0.0, step=0.1, value=0.0)
+    h_init_tri = st.sidebar.number_input("Horómetro Inicio - Trituradora 🪚", min_value=0.0, step=0.1, value=0.0)
+    h_init_chip = st.sidebar.number_input("Horómetro Inicio - Chipper 🦫", min_value=0.0, step=0.1, value=0.0)
     
     if st.sidebar.button("🚀 Iniciar Jornada", type="primary", use_container_width=True):
         st.session_state["datos_jornada"] = {
@@ -77,8 +78,8 @@ else:
         st.sidebar.markdown("---")
         st.sidebar.subheader("2. Cierre de Jornada")
         st.sidebar.markdown("**⏱️ Horómetros Fin:**")
-        h_fin_tri = st.sidebar.number_input("Horómetro Fin - Trituradora", min_value=info_j["H_Inicio_Trituradora"], step=0.1, value=info_j["H_Inicio_Trituradora"])
-        h_fin_chip = st.sidebar.number_input("Horómetro Fin - Chipper", min_value=info_j["H_Inicio_Chipper"], step=0.1, value=info_j["H_Inicio_Chipper"])
+        h_fin_tri = st.sidebar.number_input("Horómetro Fin - Trituradora 🪚", min_value=info_j["H_Inicio_Trituradora"], step=0.1, value=info_j["H_Inicio_Trituradora"])
+        h_fin_chip = st.sidebar.number_input("Horómetro Fin - Chipper 🦫", min_value=info_j["H_Inicio_Chipper"], step=0.1, value=info_j["H_Inicio_Chipper"])
         
         if st.sidebar.button("🔒 Terminar Jornada y Bloquear", type="primary", use_container_width=True):
             if h_fin_tri < info_j["H_Inicio_Trituradora"] or h_fin_chip < info_j["H_Inicio_Chipper"]:
@@ -111,7 +112,7 @@ if not st.session_state["jornada_iniciada"]:
 st.subheader("📝 Registro de Entrada de Pesos")
 
 if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloqueada"]:
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1.5, 1, 1.2, 1.2, 1.2])
     
     with col1:
         maquina_sel = st.selectbox("1. Proceso / Máquina", ["Trituradora", "Chipper"], key="maquina_select")
@@ -129,6 +130,10 @@ if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloque
     with col5:
         tara_sel = st.number_input("5. Tara Uñas (Kg)", min_value=0.0, step=1.0, value=120.0, key="tara_input")
         
+    with col6:
+        # st.time_input toma la hora local del navegador/dispositivo del usuario
+        hora_local_sel = st.time_input("6. Hora Registro", value=datetime.now().time(), key="hora_input")
+        
     btn_guardar = st.button("📥 Registrar Peso", type="primary", use_container_width=True)
     
     if btn_guardar:
@@ -138,10 +143,10 @@ if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloque
             st.error("⚠️ Por favor ingrese un peso válido registrado por la balanza.")
         else:
             peso_neto = round(peso_sel - tara_sel, 2)
-            hora_reg = datetime.now().strftime("%H:%M:%S")
+            str_hora = hora_local_sel.strftime("%H:%M:%S")
             
             nuevo_row = pd.DataFrame([{
-                "Hora Registro": hora_reg,
+                "Hora Registro": str_hora,
                 "Proceso / Máquina": maquina_sel,
                 "Tipo de Material": material_sel,
                 "Cantidad (Unidades)": cant_sel,
@@ -151,7 +156,7 @@ if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloque
             }])
             
             st.session_state["registros_pesos"] = pd.concat([st.session_state["registros_pesos"], nuevo_row], ignore_index=True)
-            st.success(f"✅ Registrado exitosamente: {cant_sel}x {material_sel} en {maquina_sel} | Peso Neto: {peso_neto} Kg")
+            st.success(f"✅ Registrado exitosamente a las {str_hora}: {cant_sel}x {material_sel} en {maquina_sel} | Peso Neto: {peso_neto} Kg")
             st.rerun()
 
 elif st.session_state["jornada_bloqueada"]:
@@ -169,9 +174,9 @@ info_j = st.session_state.get("datos_jornada", {})
 
 c_tri, c_chip = st.columns(2)
 
-# RESUMEN TRITURADORA
+# RESUMEN TRITURADORA (Icono: Cilindro dentado / Sierra)
 with c_tri:
-    st.markdown("### ⚙️ Proceso: Trituradora")
+    st.markdown("### 🪚 Proceso: Trituradora")
     df_tri = df_actual[df_actual["Proceso / Máquina"] == "Trituradora"]
     
     total_peso_tri = df_tri["Peso Neto (Kg)"].sum() if not df_tri.empty else 0.0
@@ -196,9 +201,9 @@ with c_tri:
     tabla_tri["Cantidad (Unidades)"] = tabla_tri["Cantidad (Unidades)"].astype(int)
     st.dataframe(tabla_tri, use_container_width=True, hide_index=True)
 
-# RESUMEN CHIPPER
+# RESUMEN CHIPPER (Icono: Castor)
 with c_chip:
-    st.markdown("### ⚙️ Proceso: Chipper")
+    st.markdown("### 🦫 Proceso: Chipper")
     df_chip = df_actual[df_actual["Proceso / Máquina"] == "Chipper"]
     
     total_peso_chip = df_chip["Peso Neto (Kg)"].sum() if not df_chip.empty else 0.0
@@ -226,19 +231,46 @@ with c_chip:
 st.markdown("---")
 
 # -----------------------------------------------------------------------------
-# DETALLE GENERAL DE REGISTROS Y EXPORTACIÓN
+# DETALLE GENERAL DE REGISTROS Y EXPORTACIÓN A EXCEL (.XLSX)
 # -----------------------------------------------------------------------------
 st.subheader("📋 Historial de Pesos de la Jornada Actual")
 
 st.dataframe(df_actual, use_container_width=True)
 
 if not df_actual.empty or st.session_state["jornada_bloqueada"]:
-    st.markdown("#### 📥 Exportar Reporte")
-    csv_det = df_actual.to_csv(index=False).encode('utf-8')
+    st.markdown("#### 📥 Exportar Reporte de Jornada")
+    
+    # Generación de archivo Excel (.xlsx) estructurado en memoria
+    buffer_excel = io.BytesIO()
+    with pd.ExcelWriter(buffer_excel, engine='openpyxl') as writer:
+        # Hoja 1: Registro detallado de pesos
+        df_actual.to_excel(writer, sheet_name='Registro de Pesos', index=False)
+        
+        # Hoja 2: Resumen general de la jornada y horómetros
+        if info_j:
+            df_info_jornada = pd.DataFrame([{
+                "Fecha": info_j.get("Fecha"),
+                "Turno": info_j.get("Turno"),
+                "Equipo Trituradora": info_j.get("Equipo_Trituradora"),
+                "Equipo Chipper": info_j.get("Equipo_Chipper"),
+                "Trituradora Horómetro Inicio": info_j.get("H_Inicio_Trituradora"),
+                "Trituradora Horómetro Fin": info_j.get("H_Fin_Trituradora"),
+                "Trituradora Horas Operadas": info_j.get("Horas_Trituradora"),
+                "Chipper Horómetro Inicio": info_j.get("H_Inicio_Chipper"),
+                "Chipper Horómetro Fin": info_j.get("H_Fin_Chipper"),
+                "Chipper Horas Operadas": info_j.get("Horas_Chipper")
+            }])
+            df_info_jornada.to_excel(writer, sheet_name='Datos Jornada y Horómetros', index=False)
+            
+            # Resúmenes por máquina
+            tabla_tri.to_excel(writer, sheet_name='Resumen Trituradora', index=False)
+            tabla_chip.to_excel(writer, sheet_name='Resumen Chipper', index=False)
+
+    bytes_excel = buffer_excel.getvalue()
     
     st.download_button(
-        label="📄 Descargar Hoja de Datos de la Jornada (CSV)",
-        data=csv_det,
-        file_name=f"reporte_jornada_{info_j.get('Fecha', 'biomasa')}.csv",
-        mime="text/csv"
+        label="📊 Descargar Reporte Completo en Excel (.xlsx)",
+        data=bytes_excel,
+        file_name=f"reporte_produccion_biomasa_{info_j.get('Fecha', 'jornada')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
