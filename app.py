@@ -3,149 +3,218 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# Configuración inicial de la página
+# Configuración inicial de la pantalla
 st.set_page_config(page_title="Producción Biomasa", page_icon="🪵", layout="wide")
 
-st.title("🪵 Control de Producción de Biomasa")
-st.markdown("Registro operativo para líneas de **Triturado** y **Chipper**")
+# Archivos de base de datos
+ARCHIVO_CARGAS = "registro_cargas_biomasa.csv"
+ARCHIVO_JORNADAS = "registro_jornadas_biomasa.csv"
 
-ARCHIVO_DATOS = "produccion_biomasa.csv"
-
-# Definición de productos por tipo de máquina
+# Opciones de productos por tipo de máquina
 PRODUCTOS_PROCESO = {
-    "Máquina Trituradora": [
-        "Pallets reciclados",
+    "Trituradora": [
+        "Pallets de madera",
         "Canasta de tablas",
         "Pallets de plywood"
     ],
-    "Máquina Chipper": [
-        "Jampa del proceso de aserrado",
-        "Canastas de proceso de maquinado"
+    "Chipper": [
+        "Jampa",
+        "Canasta de despunte",
+        "Tula de desperdicio"
     ]
 }
 
-# Cargar o crear la estructura de datos
-def cargar_datos():
+# Carga de archivos CSV
+def cargar_cargas():
+    columnas = ["Fecha", "Turno", "Proceso / Máquina", "Tipo de Material", "Cantidad (Unidades)", "Peso Registrado (Kg)", "Tara Uñas (Kg)", "Peso Neto (Kg)"]
+    if os.path.exists(ARCHIVO_CARGAS):
+        return pd.read_csv(ARCHIVO_CARGAS)
+    return pd.DataFrame(columns=columnas)
+
+def cargar_jornadas():
     columnas = [
-        "Fecha", "Turno", "Equipo de Trabajo", "Proceso / Máquina", "Producto",
-        "Cantidad (Unidades)", "Peso Bruto (Kg)", "Tara Uñas (Kg)", "Peso Neto (Kg)",
-        "Horómetro Inicio", "Horómetro Fin", "Horas Máquina", "Observaciones"
+        "Fecha", "Turno", 
+        "Equipo Trituradora", "Equipo Chipper",
+        "Trituradora H.Inicio", "Trituradora H.Fin", "Trituradora Horas",
+        "Chipper H.Inicio", "Chipper H.Fin", "Chipper Horas"
     ]
-    if os.path.exists(ARCHIVO_DATOS):
-        df = pd.read_csv(ARCHIVO_DATOS)
-        # Asegurar compatibilidad si se agregan nuevas columnas
-        for col in columnas:
-            if col not in df.columns:
-                df[col] = None
-        return df[columnas]
+    if os.path.exists(ARCHIVO_JORNADAS):
+        return pd.read_csv(ARCHIVO_JORNADAS)
+    return pd.DataFrame(columns=columnas)
+
+# Inicializar clave de formulario para limpiar campos tras registro
+if "form_key" not in st.session_state:
+    st.session_state["form_key"] = 0
+
+# -----------------------------------------------------------------------------
+# 1. MENÚ IZQUIERDO PLEGABLE (CONFIGURACIÓN DE JORNADA Y HORÓMETROS)
+# -----------------------------------------------------------------------------
+with st.sidebar:
+    st.header("⚙️ Control de Jornada")
+    
+    with st.expander("📌 Datos de Jornada y Equipos", expanded=True):
+        fecha_jornada = st.date_input("Fecha", datetime.now())
+        turno_jornada = st.selectbox("Turno de Trabajo", ["Turno 1 (Día)", "Turno 2 (Noche)", "Turno 3 (Rotativo)"])
+        
+        st.markdown("---")
+        st.markdown("**👥 Equipo Trituradora:**")
+        integrante_tri_1 = st.text_input("Integrante 1 (Trituradora)", placeholder="Nombre integrante 1")
+        integrante_tri_2 = st.text_input("Integrante 2 (Trituradora)", placeholder="Nombre integrante 2")
+        integrante_tri_3 = st.text_input("Integrante 3 (Trituradora)", placeholder="Nombre integrante 3")
+        
+        st.markdown("---")
+        st.markdown("**👥 Equipo Chipper:**")
+        integrante_chip_1 = st.text_input("Integrante 1 (Chipper)", placeholder="Nombre integrante 1")
+        integrante_chip_2 = st.text_input("Integrante 2 (Chipper)", placeholder="Nombre integrante 2")
+        integrante_chip_3 = st.text_input("Integrante 3 (Chipper)", placeholder="Nombre integrante 3")
+
+    with st.expander("⏱️ Horómetros (Inicio / Fin)", expanded=True):
+        st.markdown("**Trituradora:**")
+        tri_h_inicio = st.number_input("Horómetro Inicio (Trituradora)", min_value=0.0, step=0.1, value=0.0)
+        tri_h_fin = st.number_input("Horómetro Fin (Trituradora)", min_value=0.0, step=0.1, value=0.0)
+        
+        st.markdown("**Chipper:**")
+        chip_h_inicio = st.number_input("Horómetro Inicio (Chipper)", min_value=0.0, step=0.1, value=0.0)
+        chip_h_fin = st.number_input("Horómetro Fin (Chipper)", min_value=0.0, step=0.1, value=0.0)
+        
+        if st.button("🔒 Guardar y Cerrar Jornada", type="secondary", use_container_width=True):
+            if tri_h_fin < tri_h_inicio or chip_h_fin < chip_h_inicio:
+                st.error("⚠️ El horómetro final no puede ser menor al inicial.")
+            else:
+                eq_tri = ", ".join(filter(None, [integrante_tri_1, integrante_tri_2, integrante_tri_3]))
+                eq_chip = ", ".join(filter(None, [integrante_chip_1, integrante_chip_2, integrante_chip_3]))
+                
+                horas_tri = round(tri_h_fin - tri_h_inicio, 2)
+                horas_chip = round(chip_h_fin - chip_h_inicio, 2)
+                
+                nueva_jornada = pd.DataFrame([{
+                    "Fecha": fecha_jornada.strftime("%Y-%m-%d"),
+                    "Turno": turno_jornada,
+                    "Equipo Trituradora": eq_tri,
+                    "Equipo Chipper": eq_chip,
+                    "Trituradora H.Inicio": tri_h_inicio,
+                    "Trituradora H.Fin": tri_h_fin,
+                    "Trituradora Horas": horas_tri,
+                    "Chipper H.Inicio": chip_h_inicio,
+                    "Chipper H.Fin": chip_h_fin,
+                    "Chipper Horas": horas_chip
+                }])
+                
+                df_j = pd.concat([cargar_jornadas(), nueva_jornada], ignore_index=True)
+                df_j.to_csv(ARCHIVO_JORNADAS, index=False)
+                st.success("✅ Jornada y horómetros guardados con éxito.")
+
+# -----------------------------------------------------------------------------
+# 2. ÁREA PRINCIPAL
+# -----------------------------------------------------------------------------
+st.title("🪵 Control de Producción de Biomasa")
+
+df_cargas = cargar_cargas()
+
+# RESUMEN ACUMULADO
+st.subheader("📊 Resumen Acumulado de Producción")
+kpi1, kpi2, kpi3 = st.columns(3)
+kpi1.metric("Peso Neto Total Acumulado (Kg)", f"{df_cargas['Peso Neto (Kg)'].sum():,.2f}")
+kpi2.metric("Total Unidades Registradas", f"{int(df_cargas['Cantidad (Unidades)'].sum()):,}")
+kpi3.metric("Total de Registros de Pesos", len(df_cargas))
+
+st.markdown("---")
+
+# FORMULARIO HORIZONTAL PARA REGISTRO DE PESO
+st.subheader("📝 Registro de Entrada de Pesos")
+
+# Formulario para captura horizontal
+with st.form(key=f"form_pesos_{st.session_state['form_key']}"):
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        maquina_input = st.selectbox("1. Máquina / Proceso", list(PRODUCTOS_PROCESO.keys()))
+        
+    with col2:
+        # Menú dinámico según la máquina seleccionada
+        materiales_opciones = PRODUCTOS_PROCESO[maquina_input]
+        material_input = st.selectbox("2. Tipo de Material", materiales_opciones)
+        
+    with col3:
+        cantidad_input = st.number_input("3. Cantidad Unidades", min_value=1, step=1, value=1)
+        
+    with col4:
+        peso_input = st.number_input("4. Peso Registrado (Kg)", min_value=0.0, step=5.0, value=0.0)
+        
+    with col5:
+        tara_input = st.number_input("5. Tara Uñas (Kg)", min_value=0.0, step=1.0, value=50.0)
+        
+    btn_registrar = st.form_submit_button("📥 Registrar Peso", type="primary", use_container_width=True)
+
+# Lógica de guardado y limpieza del formulario
+if btn_registrar:
+    if peso_input <= tara_input and peso_input > 0:
+        st.error("⚠️ El peso registrado en el montacargas debe ser mayor a la tara de las uñas.")
+    elif peso_input == 0:
+        st.error("⚠️ Por favor ingrese el peso capturado en el montacargas.")
     else:
-        return pd.DataFrame(columns=columnas)
-
-df_datos = cargar_datos()
-
-# FORMULARIO DE REGISTRO EN BARRA LATERAL
-st.sidebar.header("📋 Registrar Nuevo Lote")
-
-with st.sidebar.form(key="form_registro_biomasa", clear_on_submit=False):
-    st.subheader("1. Datos Turno y Operación")
-    fecha = st.date_input("Fecha", datetime.now())
-    turno = st.selectbox("Turno de Trabajo", ["Turno 1 (Día)", "Turno 2 (Noche)", "Turno 3 (Rotativo)"])
-    equipo = st.text_input("Equipo de Trabajo / Operador", placeholder="Ej. Equipo A - Juan Pérez")
-    
-    st.subheader("2. Selección de Proceso y Producto")
-    proceso = st.selectbox("Proceso / Máquina", list(PRODUCTOS_PROCESO.keys()))
-    
-    # Filtrar productos dinámicamente según el proceso seleccionado
-    productos_disponibles = PRODUCTOS_PROCESO[proceso]
-    producto = st.selectbox("Producto Ingresado", productos_disponibles)
-    
-    st.subheader("3. Pesaje (Montacargas)")
-    cantidad = st.number_input("Cantidad de Unidades (Pallets/Canastas)", min_value=1, step=1, value=1)
-    peso_bruto = st.number_input("Peso Bruto Balanza (Kg)", min_value=0.0, step=5.0, value=0.0)
-    tara_unas = st.number_input("Tara de las Uñas (Kg)", min_value=0.0, step=1.0, value=50.0)
-    
-    st.subheader("4. Horómetro de la Máquina")
-    horometro_inicio = st.number_input("Horómetro Inicio", min_value=0.0, step=0.1, value=0.0)
-    horometro_fin = st.number_input("Horómetro Fin", min_value=0.0, step=0.1, value=0.0)
-    
-    observaciones = st.text_area("Observaciones", placeholder="Ej. Material con exceso de humedad, demoras...")
-    
-    submit_button = st.form_submit_button(label="📌 Registrar Carga")
-
-# PROCESAMIENTO DEL REGISTRO
-if submit_button:
-    # Validaciones básicas
-    if peso_bruto <= tara_unas and peso_bruto > 0:
-        st.sidebar.error("⚠️ El Peso Bruto debe ser mayor a la Tara de las uñas.")
-    elif horometro_fin < horometro_inicio:
-        st.sidebar.error("⚠️ El Horómetro Fin no puede ser menor al Horómetro Inicio.")
-    elif not equipo:
-        st.sidebar.error("⚠️ Debe ingresar el nombre del Equipo de Trabajo.")
-    else:
-        peso_neto = max(0.0, peso_bruto - tara_unas)
-        horas_trabajadas = round(horometro_fin - horometro_inicio, 2)
+        peso_neto = max(0.0, peso_input - tara_input)
         
         nuevo_registro = pd.DataFrame([{
-            "Fecha": fecha.strftime("%Y-%m-%d"),
-            "Turno": turno,
-            "Equipo de Trabajo": equipo,
-            "Proceso / Máquina": proceso,
-            "Producto": producto,
-            "Cantidad (Unidades)": cantidad,
-            "Peso Bruto (Kg)": peso_bruto,
-            "Tara Uñas (Kg)": tara_unas,
-            "Peso Neto (Kg)": peso_neto,
-            "Horómetro Inicio": horometro_inicio,
-            "Horómetro Fin": horometro_fin,
-            "Horas Máquina": horas_trabajadas,
-            "Observaciones": observaciones
+            "Fecha": fecha_jornada.strftime("%Y-%m-%d"),
+            "Turno": turno_jornada,
+            "Proceso / Máquina": maquina_input,
+            "Tipo de Material": material_input,
+            "Cantidad (Unidades)": cantidad_input,
+            "Peso Registrado (Kg)": peso_input,
+            "Tara Uñas (Kg)": tara_input,
+            "Peso Neto (Kg)": peso_neto
         }])
         
-        df_datos = pd.concat([df_datos, nuevo_registro], ignore_index=True)
-        df_datos.to_csv(ARCHIVO_DATOS, index=False)
-        st.sidebar.success("✅ ¡Registro agregado exitosamente!")
+        df_cargas_actualizado = pd.concat([df_cargas, nuevo_registro], ignore_index=True)
+        df_cargas_actualizado.to_csv(ARCHIVO_CARGAS, index=False)
+        
+        # Incrementar clave de formulario para reiniciar todos los campos
+        st.session_state["form_key"] += 1
+        st.success(f"✅ Se registró: {cantidad_input}x {material_input} ({maquina_input}) | Peso Neto: {peso_neto:.2f} Kg")
         st.rerun()
 
-# PANEL DE VISUALIZACIÓN Y REPORTES
-st.subheader("📊 Resumen Acumulado de Producción")
+# -----------------------------------------------------------------------------
+# 3. TABLA ESTILO EXCEL CON FILTROS
+# -----------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("📋 Registro Continuo y Hoja de Datos")
 
-if df_datos.empty:
-    st.info("No hay registros almacenados. Ingresa la primera carga usando el formulario de la izquierda.")
+if df_cargas.empty:
+    st.info("No hay registros acumulados todavía. Completa el formulario horizontal de arriba para añadir datos.")
 else:
-    # Indicadores globales (KPIs)
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("Producción Total (Kg Neto)", f"{df_datos['Peso Neto (Kg)'].sum():,.2f}")
-    kpi2.metric("Total Unidades Procesadas", f"{int(df_datos['Cantidad (Unidades)'].sum()):,}")
-    kpi3.metric("Total Horas Máquina", f"{df_datos['Horas Máquina'].sum():,.2f} hrs")
-    kpi4.metric("Registros de Cargas", len(df_datos))
-
-    st.markdown("---")
-
-    # Resumen agrupado por Proceso y Producto
-    col_left, col_right = st.columns(2)
+    # Filtros estilo Excel
+    st.markdown("##### 🔍 Filtros de Búsqueda")
+    f_col1, f_col2 = st.columns(2)
     
-    with col_left:
-        st.markdown("### 🛠️ Producción por Máquina")
-        resumen_maquina = df_datos.groupby("Proceso / Máquina")[["Cantidad (Unidades)", "Peso Neto (Kg)", "Horas Máquina"]].sum()
-        st.dataframe(resumen_maquina, use_container_width=True)
-
-    with col_right:
-        st.markdown("### 📦 Producción por Tipo de Producto")
-        resumen_producto = df_datos.groupby(["Proceso / Máquina", "Producto"])[["Cantidad (Unidades)", "Peso Neto (Kg)"]].sum()
-        st.dataframe(resumen_producto, use_container_width=True)
-
-    st.markdown("---")
-    st.markdown("### 📑 Detalle General de Transacciones")
-    st.dataframe(df_datos, use_container_width=True)
-
-    # Exportar a Excel / CSV
-    st.markdown("### 📥 Exportar Datos")
-    col_exp1, col_exp2 = st.columns(2)
+    with f_col1:
+        filtro_maquina = st.multiselect(
+            "Filtrar por Proceso / Máquina:", 
+            options=df_cargas["Proceso / Máquina"].unique(),
+            default=df_cargas["Proceso / Máquina"].unique()
+        )
+        
+    with f_col2:
+        filtro_material = st.multiselect(
+            "Filtrar por Tipo de Material:", 
+            options=df_cargas["Tipo de Material"].unique(),
+            default=df_cargas["Tipo de Material"].unique()
+        )
     
-    csv_bytes = df_datos.to_csv(index=False).encode('utf-8')
-    col_exp1.download_button(
-        label="📄 Descargar reporte en CSV",
-        data=csv_bytes,
-        file_name=f"reporte_biomasa_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+    # Aplicar filtros
+    df_filtrado = df_cargas[
+        (df_cargas["Proceso / Máquina"].isin(filtro_maquina)) &
+        (df_cargas["Tipo de Material"].isin(filtro_material))
+    ]
+    
+    # Mostrar tabla interactiva de datos
+    st.dataframe(df_filtrado, use_container_width=True)
+    
+    # Botón de exportación
+    csv_datos = df_filtrado.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Descargar Hoja de Datos en CSV / Excel",
+        data=csv_datos,
+        file_name=f"registro_biomasa_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv"
     )
