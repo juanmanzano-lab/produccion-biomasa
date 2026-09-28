@@ -19,30 +19,36 @@ MATERIALES = {
 # -----------------------------------------------------------------------------
 def guardar_en_google_drive(fila_datos):
     try:
-        # Configuración de permisos
+        # Verificar si existen los secretos
+        if "gcp_service_account" not in st.secrets:
+            return False, "No se encontró la sección [gcp_service_account] en los Secretos de Streamlit."
+
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
         
-        # Cargar credenciales desde st.secrets
+        # Copiar secretos e interpretar correctamente la clave privada
         creds_dict = dict(st.secrets["gcp_service_account"])
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
         
-        # Abrir el documento por su nombre exacto en Drive
+        # Abrir el documento en Drive por su nombre exacto
         sheet = client.open("Control_Produccion_Biomasa").sheet1
         
-        # Agregar la nueva fila al final del archivo
+        # Agregar la fila
         sheet.append_row(fila_datos)
-        return True, "Guardado en Google Drive correctamente."
+        return True, "Guardado exitosamente en Google Drive."
+    except gspread.exceptions.SpreadsheetNotFound:
+        return False, "Error: No se encontró la hoja 'Control_Produccion_Biomasa' en Drive. Revisa el nombre exacto del archivo."
     except Exception as e:
-        return False, str(e)
+        return False, f"Error de conexión con Google: {str(e)}"
 
 # -----------------------------------------------------------------------------
-# INICIALIZACIÓN DE ESTADO (ENCERADO EN CADA NUEVA SESIÓN / REFRESH)
+# INICIALIZACIÓN DE ESTADO
 # -----------------------------------------------------------------------------
 if "jornada_iniciada" not in st.session_state:
     st.session_state["jornada_iniciada"] = False
@@ -55,9 +61,11 @@ if "registros_pesos" not in st.session_state:
         "Hora Registro", "Proceso / Máquina", "Tipo de Material", 
         "Cantidad (Unidades)", "Peso Registrado (Kg)", "Tara Uñas (Kg)", "Peso Neto (Kg)"
     ])
+if "ultimo_mensaje" not in st.session_state:
+    st.session_state["ultimo_mensaje"] = None
 
 # -----------------------------------------------------------------------------
-# MENÚ LATERAL: CONTROL DE JORNADA (INICIO Y FIN)
+# MENÚ LATERAL: CONTROL DE JORNADA
 # -----------------------------------------------------------------------------
 st.sidebar.title("⚙️ Control de Jornada")
 
@@ -94,7 +102,7 @@ if not st.session_state["jornada_iniciada"]:
             "Horas_Chipper": 0.0
         }
         st.session_state["jornada_iniciada"] = True
-        st.sidebar.success("✅ Jornada iniciada. Sistema en cero listo para registrar.")
+        st.session_state["ultimo_mensaje"] = ("success", "✅ Jornada iniciada. Sistema listo.")
         st.rerun()
 
 else:
@@ -117,7 +125,7 @@ else:
                 st.session_state["datos_jornada"]["Horas_Trituradora"] = round(h_fin_tri - info_j["H_Inicio_Trituradora"], 2)
                 st.session_state["datos_jornada"]["Horas_Chipper"] = round(h_fin_chip - info_j["H_Inicio_Chipper"], 2)
                 st.session_state["jornada_bloqueada"] = True
-                st.sidebar.success("🔒 Jornada terminada y bloqueada.")
+                st.session_state["ultimo_mensaje"] = ("info", "🔒 Jornada terminada y bloqueada.")
                 st.rerun()
     else:
         st.sidebar.error("🔒 JORNADA FINALIZADA Y BLOQUEADA")
@@ -126,15 +134,27 @@ else:
             st.rerun()
 
 # -----------------------------------------------------------------------------
-# ÁREA PRINCIPAL
+# ÁREA PRINCIPAL Y MENSAJES DE NOTIFICACIÓN
 # -----------------------------------------------------------------------------
 st.title("🪵 Control de Producción de Biomasa")
+
+# Mostrar mensaje persistente de la última acción realizada
+if st.session_state["ultimo_mensaje"]:
+    tipo_msg, texto_msg = st.session_state["ultimo_mensaje"]
+    if tipo_msg == "success":
+        st.success(texto_msg)
+    elif tipo_msg == "warning":
+        st.warning(texto_msg)
+    elif tipo_msg == "error":
+        st.error(texto_msg)
+    elif tipo_msg == "info":
+        st.info(texto_msg)
 
 if not st.session_state["jornada_iniciada"]:
     st.warning("⚠️ **Jornada no iniciada.** Por favor completa los datos en el menú lateral izquierdo y haz clic en **'Iniciar Jornada'** para comenzar.")
 
 # -----------------------------------------------------------------------------
-# FORMULARIO HORIZONTAL PARA REGISTRO DE PESO CON AUTO-SYNC A DRIVE
+# FORMULARIO PARA REGISTRO DE PESO
 # -----------------------------------------------------------------------------
 st.subheader("📝 Registro de Entrada de Pesos")
 
@@ -161,15 +181,17 @@ if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloque
     
     if btn_guardar:
         if peso_sel <= tara_sel and peso_sel > 0:
-            st.error("⚠️ El Peso Balanza debe ser mayor a la Tara de las uñas (120 Kg).")
+            st.session_state["ultimo_mensaje"] = ("error", "⚠️ El Peso Balanza debe ser mayor a la Tara de las uñas (120 Kg).")
+            st.rerun()
         elif peso_sel == 0:
-            st.error("⚠️ Por favor ingrese un peso válido registrado por la balanza.")
+            st.session_state["ultimo_mensaje"] = ("error", "⚠️ Por favor ingrese un peso válido registrado por la balanza.")
+            st.rerun()
         else:
             peso_neto = round(peso_sel - tara_sel, 2)
             str_hora_auto = datetime.now().strftime("%H:%M:%S")
             info_j = st.session_state["datos_jornada"]
             
-            # 1. Guardar en la sesión local
+            # 1. Guardar en memoria de Streamlit
             nuevo_row = pd.DataFrame([{
                 "Hora Registro": str_hora_auto,
                 "Proceso / Máquina": maquina_sel,
@@ -181,17 +203,18 @@ if st.session_state["jornada_iniciada"] and not st.session_state["jornada_bloque
             }])
             st.session_state["registros_pesos"] = pd.concat([st.session_state["registros_pesos"], nuevo_row], ignore_index=True)
             
-            # 2. Guardar automáticamente en Google Drive
+            # 2. Intentar guardar en Google Drive
             fila_drive = [
                 str_hora_auto, maquina_sel, material_sel, cant_sel, 
                 peso_sel, tara_sel, peso_neto, info_j.get("Fecha"), info_j.get("Turno")
             ]
             
-            exito, msg = guardar_en_google_drive(fila_drive)
-            if exito:
-                st.success(f"✅ Registrado localmente y en Google Drive a las {str_hora_auto}: {cant_sel}x {material_sel}")
+            exito_drive, msg_drive = guardar_en_google_drive(fila_drive)
+            
+            if exito_drive:
+                st.session_state["ultimo_mensaje"] = ("success", f"✅ Registrado a las {str_hora_auto}: {cant_sel}x {material_sel} | Guardado en Google Drive.")
             else:
-                st.warning(f"⚠️ Se guardó localmente pero falló en Google Drive. Error: {msg}")
+                st.session_state["ultimo_mensaje"] = ("error", f"⚠️ Guardado localmente, pero falló en Google Drive. {msg_drive}")
                 
             st.rerun()
 
