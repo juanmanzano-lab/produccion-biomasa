@@ -15,7 +15,7 @@ st.set_page_config(
 # CONFIGURACIÓN DE GOOGLE APPS SCRIPT (WEBHOOK)
 # ---------------------------------------------------------
 # Reemplaza esta URL con la URL de tu WebApp desplegada en Google Apps Script
-WEBHOOK_URL = "https://script.google.com/macros/s/TU_SCRIPT_ID_AQUI/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbz36kbfHXjUt3eJ4eZ6QWKwbJ2UkfD64SGdUqD4BjUDcJmdKN7xis0m64KekSv-kEmd/exec"
 
 # ---------------------------------------------------------
 # INICIALIZACIÓN DEL ESTADO DE SESIÓN (PERSISTENCIA)
