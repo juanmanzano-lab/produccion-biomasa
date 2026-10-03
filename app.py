@@ -22,7 +22,7 @@ ZONA_HORARIA_ECUADOR = zoneinfo.ZoneInfo("America/Guayaquil")
 # CONFIGURACIÓN DE GOOGLE APPS SCRIPT (WEBHOOK)
 # ---------------------------------------------------------
 # Reemplaza esta URL con la URL de tu WebApp desplegada en Google Apps Script
-WEBHOOK_URL = "https://script.google.com/macros/s/TU_SCRIPT_ID_AQUI/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyBeNiyVIq792O7TTOuDJvI5YlaGpeEwOb_tDEpdrNNlLAsKMRpdyzqp7Dn0YKpbjXl/exec"
 
 # PRODUCTOS PERMITIDOS POR MÁQUINA
 PRODUCTOS_POR_MAQUINA = {
