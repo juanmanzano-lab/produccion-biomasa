@@ -21,7 +21,7 @@ ZONA_HORARIA_ECUADOR = zoneinfo.ZoneInfo("America/Guayaquil")
 # CONFIGURACIÓN DE GOOGLE APPS SCRIPT (WEBHOOK)
 # ---------------------------------------------------------
 # Pega aquí la URL resultante al desplegar Apps Script
-WEBHOOK_URL = "https://script.google.com/macros/s/TU_SCRIPT_ID_AQUI/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxQHqo_142dq4qKt-Ls63yIcyH9dWtw5oHgfyuQ4Zs5yN24DgiCz-es9e90saFAVVCo/exec"
 
 # CONSTANTE TARA MONTACARGAS
 TARA_UÑAS_KG = 120.0
