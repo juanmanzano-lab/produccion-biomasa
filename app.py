@@ -3,209 +3,212 @@ import requests
 import json
 import pandas as pd
 from datetime import datetime
+import zoneinfo
 
-# Configuración inicial de la página
+# ---------------------------------------------------------
+# CONFIGURACIÓN DE PÁGINA
+# ---------------------------------------------------------
 st.set_page_config(
-    page_title="Control de Producción y Orómetros",
-    page_icon="🚜",
+    page_title="Control de Pesajes y Producción",
+    page_icon="⚖️",
     layout="centered"
 )
+
+# Zona horaria de Ecuador (Quito / Guayaquil - GMT-5)
+ZONA_HORARIA_ECUADOR = zoneinfo.ZoneInfo("America/Guayaquil")
 
 # ---------------------------------------------------------
 # CONFIGURACIÓN DE GOOGLE APPS SCRIPT (WEBHOOK)
 # ---------------------------------------------------------
 # Reemplaza esta URL con la URL de tu WebApp desplegada en Google Apps Script
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbz36kbfHXjUt3eJ4eZ6QWKwbJ2UkfD64SGdUqD4BjUDcJmdKN7xis0m64KekSv-kEmd/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/TU_SCRIPT_ID_AQUI/exec"
 
 # ---------------------------------------------------------
-# INICIALIZACIÓN DEL ESTADO DE SESIÓN (PERSISTENCIA)
+# INICIALIZACIÓN DE MEMORIA DE SESIÓN (PERSISTENCIA SIN ALTERAR INTERFAZ)
 # ---------------------------------------------------------
-if "jornada_activa" not in st.session_state:
-    st.session_state.jornada_activa = False
+if "registros" not in st.session_state:
+    st.session_state.registros = []
 
-if "orometro_inicio_m1" not in st.session_state:
-    st.session_state.orometro_inicio_m1 = 0.0
+if "orometro_chipper_inicio" not in st.session_state:
+    st.session_state.orometro_chipper_inicio = 0.0
 
-if "orometro_inicio_m2" not in st.session_state:
-    st.session_state.orometro_inicio_m2 = 0.0
+if "orometro_trituradora_inicio" not in st.session_state:
+    st.session_state.orometro_trituradora_inicio = 0.0
 
-if "registros_pesos" not in st.session_state:
-    st.session_state.registros_pesos = []
-
-if "fecha_inicio_jornada" not in st.session_state:
-    st.session_state.fecha_inicio_jornada = None
+if "hora_inicio_jornada" not in st.session_state:
+    st.session_state.hora_inicio_jornada = None
 
 # ---------------------------------------------------------
-# ENCABEZADO Y BARRA LATERAL
+# INTERFAZ PRINCIPAL (ESTRUKTURA ORIGINAL DE REGISTRO)
 # ---------------------------------------------------------
-st.title("🚜 Registro de Jornada de Producción")
+st.title("📋 Control de Producción y Orómetros")
 
-with st.sidebar:
-    st.header("📌 Estado de la Jornada")
-    if st.session_state.jornada_activa:
-        st.success("🟢 JORNADA EN PROGRESO")
-        st.info(f"**Inicio:** {st.session_state.fecha_inicio_jornada}")
-        st.write(f"**Orómetro Inic. M1:** {st.session_state.orometro_inicio_m1} hrs")
-        st.write(f"**Orómetro Inic. M2:** {st.session_state.orometro_inicio_m2} hrs")
-        st.write(f"**Registros guardados:** {len(st.session_state.registros_pesos)}")
-    else:
-        st.warning("🔴 JORNADA NO INICIADA")
+# Registro de Orómetros de Inicio de Jornada
+st.subheader("⚙️ Orómetros al Inicio de Jornada")
+col_o1, col_o2 = st.columns(2)
 
-# ---------------------------------------------------------
-# 1. PANTALLA DE INICIO DE JORNADA
-# ---------------------------------------------------------
-if not st.session_state.jornada_activa:
-    st.subheader("🏁 Iniciar Nueva Jornada de Trabajo")
-    st.write("Ingrese los orómetros iniciales de ambas máquinas para habilitar el registro de peso.")
+with col_o1:
+    oro_chip_inic = st.number_input(
+        "Orómetro Inicial Chipper (hrs)",
+        min_value=0.0,
+        value=float(st.session_state.orometro_chipper_inicio),
+        step=0.1,
+        format="%.1f",
+        key="input_oro_chip_inic"
+    )
+    st.session_state.orometro_chipper_inicio = oro_chip_inic
 
-    with st.form("form_inicio_jornada"):
-        col1, col2 = st.columns(2)
-        with col1:
-            oro_m1 = st.number_input("Orómetro Inicial - Máquina 1 (hrs)", min_value=0.0, step=0.1, format="%.1f")
-        with col2:
-            oro_m2 = st.number_input("Orómetro Inicial - Máquina 2 (hrs)", min_value=0.0, step=0.1, format="%.1f")
-        
-        btn_iniciar = st.form_submit_button("🚀 Iniciar Jornada", use_container_width=True)
+with col_o2:
+    oro_trit_inic = st.number_input(
+        "Orómetro Inicial Trituradora (hrs)",
+        min_value=0.0,
+        value=float(st.session_state.orometro_trituradora_inicio),
+        step=0.1,
+        format="%.1f",
+        key="input_oro_trit_inic"
+    )
+    st.session_state.orometro_trituradora_inicio = oro_trit_inic
 
-        if btn_iniciar:
-            if oro_m1 >= 0 and oro_m2 >= 0:
-                st.session_state.jornada_activa = True
-                st.session_state.orometro_inicio_m1 = oro_m1
-                st.session_state.orometro_inicio_m2 = oro_m2
-                st.session_state.fecha_inicio_jornada = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.session_state.registros_pesos = []
-                st.success("¡Jornada iniciada con éxito! Ya puede registrar la producción.")
-                st.rerun()
-            else:
-                st.error("Por favor ingrese valores de orómetro válidos.")
+st.divider()
 
 # ---------------------------------------------------------
-# 2. PANTALLA DE REGISTRO DURANTE LA JORNADA
+# FORMULARIO DE REGISTRO DE PESO
 # ---------------------------------------------------------
-else:
-    st.subheader("⚖️ Registro de Pesos / Producción")
+st.subheader("⚖️ Ingreso de Pesadas")
 
-    with st.form("form_registro_peso", clear_on_submit=True):
-        col_m, col_p = st.columns(2)
-        with col_m:
-            maquina = st.selectbox("Seleccionar Máquina", ["Máquina 1", "Máquina 2"])
-        with col_p:
-            peso_ton = st.number_input("Peso Registrado (Toneladas)", min_value=0.01, step=0.01, format="%.2f")
-        
-        observaciones = st.text_input("Observaciones o notas (opcional)")
-        btn_guardar_peso = st.form_submit_button("➕ Guardar Registro", use_container_width=True)
-
-        if btn_guardar_peso:
-            nuevo_registro = {
-                "hora": datetime.now().strftime("%H:%M:%S"),
-                "maquina": maquina,
-                "peso_ton": peso_ton,
-                "observaciones": observaciones
-            }
-            st.session_state.registros_pesos.append(nuevo_registro)
-            st.toast(f"✅ Registrado: {peso_ton} Ton en {maquina}", icon="✅")
-
-    # Mostrar tabla de producción acumulada
-    st.divider()
-    st.write("### 📋 Producción Acumulada del Turno")
+with st.form("form_peso", clear_on_submit=True):
+    col_m, col_p = st.columns(2)
     
-    if len(st.session_state.registros_pesos) > 0:
-        df_registros = pd.DataFrame(st.session_state.registros_pesos)
-        st.dataframe(df_registros, use_container_width=True)
-
-        # Totales parciales
-        ton_m1 = sum(r["peso_ton"] for r in st.session_state.registros_pesos if r["maquina"] == "Máquina 1")
-        ton_m2 = sum(r["peso_ton"] for r in st.session_state.registros_pesos if r["maquina"] == "Máquina 2")
+    with col_m:
+        maquina = st.selectbox("Seleccionar Máquina", ["Chipper", "Trituradora"])
         
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Máquina 1", f"{ton_m1:.2f} Ton")
-        c2.metric("Total Máquina 2", f"{ton_m2:.2f} Ton")
-        c3.metric("Total Jornada", f"{(ton_m1 + ton_m2):.2f} Ton")
-    else:
-        st.info("Aún no hay pesadas registradas en esta jornada.")
-
-    # ---------------------------------------------------------
-    # 3. FINALIZAR JORNADA Y ENVIAR A GOOGLE DRIVE / SHEETS
-    # ---------------------------------------------------------
-    st.divider()
-    st.subheader("🏁 Cierre de Jornada de Trabajo")
-
-    with st.expander("🔻 Desplegar formulario para Finalizar Jornada", expanded=False):
-        with st.form("form_fin_jornada"):
-            st.write("Ingrese los orómetros finales para realizar los cálculos y guardar la información en Google Drive.")
+    with col_p:
+        peso = st.number_input("Peso Registrado (Toneladas / Kg)", min_value=0.0, step=0.01, format="%.2f")
+        
+    observacion = st.text_input("Observaciones (opcional)")
+    
+    btn_guardar = st.form_submit_button("➕ Registrar Peso", use_container_width=True)
+    
+    if btn_guardar:
+        if peso > 0:
+            # Obtener fecha y hora exacta en zona horaria de Ecuador
+            ahora_ecuador = datetime.now(ZONA_HORARIA_ECUADOR)
             
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                oro_fin_m1 = st.number_input(
-                    "Orómetro Final - Máquina 1 (hrs)", 
-                    min_value=st.session_state.orometro_inicio_m1, 
-                    value=st.session_state.orometro_inicio_m1,
-                    step=0.1, 
-                    format="%.1f"
-                )
-            with col_f2:
-                oro_fin_m2 = st.number_input(
-                    "Orómetro Final - Máquina 2 (hrs)", 
-                    min_value=st.session_state.orometro_inicio_m2, 
-                    value=st.session_state.orometro_inicio_m2,
-                    step=0.1, 
-                    format="%.1f"
-                )
+            if st.session_state.hora_inicio_jornada is None:
+                st.session_state.hora_inicio_jornada = ahora_ecuador.strftime("%Y-%m-%d %H:%M:%S")
 
-            btn_cerrar_jornada = st.form_submit_button("🔒 Finalizar y Guardar Jornada", use_container_width=True)
+            nuevo_registro = {
+                "fecha_hora": ahora_ecuador.strftime("%Y-%m-%d %H:%M:%S"),
+                "hora_corta": ahora_ecuador.strftime("%H:%M:%S"),
+                "maquina": maquina,
+                "peso": peso,
+                "observacion": observacion
+            }
+            
+            # Guardar en el estado de sesión persistente
+            st.session_state.registros.append(nuevo_registro)
+            st.success(f"✅ Registrado en {maquina}: {peso} a las {nuevo_registro['hora_corta']} (Hora Ecuador)")
+        else:
+            st.warning("Ingrese un peso mayor a 0.")
 
-            if btn_cerrar_jornada:
-                # Cálculos de horas operativas
-                horas_m1 = round(oro_fin_m1 - st.session_state.orometro_inicio_m1, 2)
-                horas_m2 = round(oro_fin_m2 - st.session_state.orometro_inicio_m2, 2)
+# ---------------------------------------------------------
+# TABLA DE REGISTROS ACUMULADOS EN LA JORNADA
+# ---------------------------------------------------------
+st.divider()
+st.subheader("📊 Registros de la Jornada Actual")
 
-                # Cálculos de producción
-                ton_m1 = sum(r["peso_ton"] for r in st.session_state.registros_pesos if r["maquina"] == "Máquina 1")
-                ton_m2 = sum(r["peso_ton"] for r in st.session_state.registros_pesos if r["maquina"] == "Máquina 2")
-                ton_total = ton_m1 + ton_m2
+if len(st.session_state.registros) > 0:
+    df = pd.DataFrame(st.session_state.registros)
+    st.dataframe(df[["hora_corta", "maquina", "peso", "observacion"]], use_container_width=True)
+    
+    # Cálculos acumulados
+    total_chipper = sum(r["peso"] for r in st.session_state.registros if r["maquina"] == "Chipper")
+    total_trituradora = sum(r["peso"] for r in st.session_state.registros if r["maquina"] == "Trituradora")
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Chipper", f"{total_chipper:.2f}")
+    c2.metric("Total Trituradora", f"{total_trituradora:.2f}")
+    c3.metric("Total Jornada", f"{(total_chipper + total_trituradora):.2f}")
+else:
+    st.info("No hay pesadas registradas en esta jornada.")
 
-                # Rendimiento Ton/Hora
-                rend_m1 = round(ton_m1 / horas_m1, 2) if horas_m1 > 0 else 0.0
-                rend_m2 = round(ton_m2 / horas_m2, 2) if horas_m2 > 0 else 0.0
+# ---------------------------------------------------------
+# CIERRE Y FINALIZACIÓN DE JORNADA
+# ---------------------------------------------------------
+st.divider()
+st.subheader("🏁 Finalizar Jornada de Trabajo")
 
-                payload = {
-                    "fecha_inicio": st.session_state.fecha_inicio_jornada,
-                    "fecha_fin": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "orometro_inicio_m1": st.session_state.orometro_inicio_m1,
-                    "orometro_fin_m1": oro_fin_m1,
-                    "horas_trabajadas_m1": horas_m1,
-                    "toneladas_m1": ton_m1,
-                    "rendimiento_ton_hr_m1": rend_m1,
-                    "orometro_inicio_m2": st.session_state.orometro_inicio_m2,
-                    "orometro_fin_m2": oro_fin_m2,
-                    "horas_trabajadas_m2": horas_m2,
-                    "toneladas_m2": ton_m2,
-                    "rendimiento_ton_hr_m2": rend_m2,
-                    "toneladas_totales": ton_total,
-                    "detalle_registros": st.session_state.registros_pesos
-                }
-
-                # Envío de datos a Google Sheets mediante Webhook
-                try:
-                    response = requests.post(
-                        WEBHOOK_URL, 
-                        data=json.dumps(payload),
-                        headers={"Content-Type": "application/json"}
-                    )
+with st.expander("🔻 Presiona aquí para ingresar orómetros finales y cerrar jornada"):
+    col_f1, col_f2 = st.columns(2)
+    
+    with col_f1:
+        oro_chip_fin = st.number_input(
+            "Orómetro Final Chipper (hrs)",
+            min_value=st.session_state.orometro_chipper_inicio,
+            value=st.session_state.orometro_chipper_inicio,
+            step=0.1,
+            format="%.1f"
+        )
+        
+    with col_f2:
+        oro_trit_fin = st.number_input(
+            "Orómetro Final Trituradora (hrs)",
+            min_value=st.session_state.orometro_trituradora_inicio,
+            value=st.session_state.orometro_trituradora_inicio,
+            step=0.1,
+            format="%.1f"
+        )
+        
+    btn_finalizar = st.button("🔴 CERRAR Y GUARDAR JORNADA", use_container_width=True, type="primary")
+    
+    if btn_finalizar:
+        if len(st.session_state.registros) == 0:
+            st.error("No se puede cerrar la jornada sin haber registrado pesadas.")
+        else:
+            ahora_fin = datetime.now(ZONA_HORARIA_ECUADOR)
+            
+            # Cálculos de rendimiento
+            hrs_chipper = round(oro_chip_fin - st.session_state.orometro_chipper_inicio, 2)
+            hrs_trituradora = round(oro_trit_fin - st.session_state.orometro_trituradora_inicio, 2)
+            
+            total_chipper = sum(r["peso"] for r in st.session_state.registros if r["maquina"] == "Chipper")
+            total_trituradora = sum(r["peso"] for r in st.session_state.registros if r["maquina"] == "Trituradora")
+            
+            rend_chipper = round(total_chipper / hrs_chipper, 2) if hrs_chipper > 0 else 0.0
+            rend_trituradora = round(total_trituradora / hrs_trituradora, 2) if hrs_trituradora > 0 else 0.0
+            
+            # Objeto de envío
+            payload = {
+                "fecha_inicio": st.session_state.hora_inicio_jornada,
+                "fecha_fin": ahora_fin.strftime("%Y-%m-%d %H:%M:%S"),
+                "orometro_inicio_chipper": st.session_state.orometro_chipper_inicio,
+                "orometro_fin_chipper": oro_chip_fin,
+                "horas_chipper": hrs_chipper,
+                "total_peso_chipper": total_chipper,
+                "rendimiento_chipper": rend_chipper,
+                "orometro_inicio_trituradora": st.session_state.orometro_trituradora_inicio,
+                "orometro_fin_trituradora": oro_trit_fin,
+                "horas_trituradora": hrs_trituradora,
+                "total_peso_trituradora": total_trituradora,
+                "rendimiento_trituradora": rend_trituradora,
+                "peso_total_jornada": total_chipper + total_trituradora,
+                "detalle_pesadas": st.session_state.registros
+            }
+            
+            # Enviar datos al Webhook de Google Apps Script
+            try:
+                res = requests.post(WEBHOOK_URL, data=json.dumps(payload), headers={"Content-Type": "application/json"})
+                if res.status_code == 200:
+                    st.success("🎉 ¡Jornada finalizada y guardada exitosamente en Google Drive!")
                     
-                    if response.status_code == 200:
-                        st.success("✅ ¡Jornada registrada correctamente en Google Drive!")
-                        st.balloons()
-
-                        # Restablecer la aplicación desde cero para el siguiente turno
-                        st.session_state.jornada_activa = False
-                        st.session_state.orometro_inicio_m1 = 0.0
-                        st.session_state.orometro_inicio_m2 = 0.0
-                        st.session_state.registros_pesos = []
-                        st.session_state.fecha_inicio_jornada = None
-
-                        st.button("🔄 Iniciar Nuevo Turno", on_click=lambda: st.rerun())
-                    else:
-                        st.error(f"Error al guardar datos. Código de respuesta: {response.status_code}")
-                except Exception as e:
-                    st.error(f"Error de conexión con Google Drive/Sheets: {e}")
+                    # Limpieza completa de la sesión para la nueva jornada
+                    st.session_state.registros = []
+                    st.session_state.orometro_chipper_inicio = 0.0
+                    st.session_state.orometro_trituradora_inicio = 0.0
+                    st.session_state.hora_inicio_jornada = None
+                    
+                    st.button("🔄 Comenzar Nueva Jornada", on_click=lambda: st.rerun())
+                else:
+                    st.error(f"Error al enviar datos. Código servidor: {res.status_code}")
+            except Exception as e:
+                st.error(f"Error de conexión: {e}")
